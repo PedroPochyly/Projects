@@ -2,27 +2,33 @@ import pandas as pd
 import yfinance as yf
 import requests
 from bs4 import BeautifulSoup
+import re
 
+# 🔎 Função robusta: busca payout e total de papéis de forma confiável
 def get_dados_status_invest(ticker_brasileiro):
     papel = ticker_brasileiro.replace(".SA", "").lower()
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    # Payout médio
+    # 1. Payout médio via API JSON
     url_payout = f"https://statusinvest.com.br/acao/payoutresult?code={papel}"
     r = requests.get(url_payout, headers=headers)
     payout_medio = float(r.json().get("avg", 0)) / 100
 
-    # Total de papéis
+    # 2. Total de papéis via scraping tolerante
     url_html = f"https://statusinvest.com.br/acoes/{papel}"
     r2 = requests.get(url_html, headers=headers)
     soup = BeautifulSoup(r2.text, "html.parser")
-    h3 = soup.find('h3', string="Nº total de papéis")
-    strong = h3.find_next("strong")
-    num_acoes = int(strong.text.strip().replace(".", ""))
 
-    return payout_medio, num_acoes
+    spans = soup.find_all("span", string=re.compile("total de papéis", re.I))
+    for span in spans:
+        strong = span.find_next("strong", class_="value")
+        if strong:
+            texto = strong.text.strip().replace(".", "").replace(",", "")
+            return payout_medio, int(texto)
 
-# 🟡 Lista de ações analisadas
+    raise ValueError(f"❌ Não foi possível encontrar o número de ações de {papel}")
+
+# ✅ Lista de ações para análise
 Acoes = ["AURE3", "BBAS3", "CXSE3", "KLBN3", "SAPR3"]
 Acoes = [acao + ".SA" for acao in Acoes]
 
@@ -45,22 +51,24 @@ for empresa in Acoes:
     lucro_futuro = df["Net Income"].iloc[-1] * (1 + var_media)
     lpa = lucro_futuro / num_acoes
     dividendo_futuro = lpa * payout_medio
-    preco_teto = dividendo_futuro / 0.06  # yield alvo de 6%
-
+    preco_teto = dividendo_futuro / 0.06
     preco_atual = ticker.info["regularMarketPrice"]
     upside = ((preco_teto / preco_atual) - 1) * 100
 
+    # ✅ Exibição limpa e completa
     print(f"\n📈 {empresa}")
     print(f"🔎 Dados capturados:")
     print(f"  • Payout médio: {payout_medio:.2%}")
     print(f"  • Total de papéis: {num_acoes:,}")
     print(f"  • Preço atual: R$ {preco_atual:.2f}")
     print(f"📊 Projeções:")
+    print(f"  • Crescimento médio anual do lucro: {var_media * 100:.2f}%")
     print(f"  • Lucro Futuro: R$ {lucro_futuro:,.2f}")
     print(f"  • LPA Projetado: R$ {lpa:.2f}")
     print(f"  • Dividendo Futuro: R$ {dividendo_futuro:.2f}")
     print(f"🎯 Preço Teto (Yield 6%): R$ {preco_teto:.2f}")
     print(f"🚀 Upside Potencial: {upside:.2f}%")
+
 
 # preciso pegar o lucro líquido de todas as empresas, assim como o numero total de papeis e a média do payout
 
