@@ -1,78 +1,126 @@
-#Biblios
-
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+import time
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
-import re
 from datetime import datetime
 import yfinance as yf
-########################################################################################################################
 
-#funções
+# ✅ Modo headless controlável
+HEADLESS = True  # Altere para False se quiser visualizar o navegador
 
-def calcular_dividendo_anual(df):
-    df['Ano'] = df['Data Pagamento'].dt.year
+# Lista de ações
+tickers = ["AURE3", "BBAS3", "CXSE3", "KLBN3", "SAPR3"]
+
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+wait = WebDriverWait(driver, 20)
+
+dfs = {}
+
+for ticker in tickers:
+    print(f"\n🔍 Coletando dados de: {ticker}")
+    driver.get(f'https://statusinvest.com.br/acoes/{ticker.lower()}')
+
+    try:
+        # Scroll para carregar a área dos proventos
+        div7 = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, '/html/body/main/div[3]/div/div[1]/div[2]/div[7]'))
+        )
+        driver.execute_script("arguments[0].scrollIntoView(true);", div7)
+        time.sleep(2)
+
+        wait.until(EC.presence_of_element_located((
+            By.XPATH, '/html/body/main/div[3]/div/div[1]/div[2]/div[7]/div/div[2]/table')))
+    except:
+        print(f"⚠️ Tabela de proventos não encontrada para {ticker}. Pulando...\n")
+        continue
+
+    dados = []
+    pagina = 1
+
+    while pagina <= 6:
+        print(f"📄 Página {pagina}...")
+        driver.execute_script("arguments[0].scrollIntoView(true);", div7)
+        time.sleep(1)
+
+        if pagina > 1:
+            try:
+                xpath_botao = f'//ul/li/a[text()="{pagina}"]'
+                botao = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_botao)))
+                driver.execute_script("arguments[0].click();", botao)
+                time.sleep(1.5)
+            except:
+                print(f"✅ Fim da paginação para {ticker}. Última página coletada: {pagina - 1}")
+                break
+
+        linhas = driver.find_elements(By.XPATH, '/html/body/main/div[3]/div/div[1]/div[2]/div[7]/div/div[2]/table/tbody/tr')
+        for linha in linhas:
+            colunas = linha.find_elements(By.TAG_NAME, 'td')
+            linha_dados = [c.text.strip() for c in colunas]
+            if len(linha_dados) == 4:
+                dados.append(linha_dados)
+
+        pagina += 1
+
+    df = pd.DataFrame(dados, columns=['Tipo', 'Data Com', 'Pagamento', 'Valor'])
+    df = df[['Pagamento', 'Valor']]
+    df['Pagamento'] = pd.to_datetime(df['Pagamento'], format='%d/%m/%Y', errors='coerce')
+    df['Valor'] = (
+        df['Valor']
+        .str.replace(r'[^\d,]', '', regex=True)
+        .str.replace(',', '.', regex=False)
+        .astype(float)
+    )
+    df.dropna(inplace=True)
+    dfs[ticker] = df
+
+    # Resumo anual
+    df_resampled = df.resample('YE', on='Pagamento')['Valor'].sum()
+    preco_teto_ano = df_resampled / 0.06
+
+    resultado = pd.DataFrame({
+        'Ano': df_resampled.index.year,
+        'Dividendo Total': df_resampled.values.round(2),
+        'Preço Teto (DY 6%)': preco_teto_ano.values.round(2)
+    })
+
+    print(f"\n📊 Resultado Anual de {ticker}:")
+    print(resultado)
+
+    # Calculo média dos 3 anos anteriores ao atual
     ano_atual = datetime.now().year
     anos_validos = [ano_atual - 3, ano_atual - 2, ano_atual - 1]
-    df_filtrado = df[df['Ano'].isin(anos_validos)]
-    return df_filtrado.groupby('Ano')['Valor'].sum()
+    base_media = resultado[resultado['Ano'].isin(anos_validos)]
 
-########################################################################################################################
+    if len(base_media) == 3:
+        media_3anos = base_media['Dividendo Total'].mean()
+        preco_teto = media_3anos / 0.06
 
-#Extração de dados e criação dos DF´s
+        # Cotação atual via yfinance
+        yf_ticker = yf.Ticker(f"{ticker}.SA")
+        try:
+            preco_atual = yf_ticker.fast_info['lastPrice']
+        except:
+            preco_atual = None
 
-dy_esperado = 0.06
-Ticker_empresas = ["AURE3", "BBAS3", "CXSE3", "KLBN3", "SAPR3"]
-Ticker_empresas_lower = [empresa.lower() for empresa in Ticker_empresas]
+        print(f"\n📌 Média dos dividendos ({anos_validos}): R$ {media_3anos:.2f}")
+        print(f"🎯 Preço teto (DY 6%): R$ {preco_teto:.2f}")
 
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-}
+        if preco_atual:
+            upside = (preco_teto / preco_atual - 1) * 100
+            print(f"💸 Cotação atual: R$ {preco_atual:.2f}")
+            print(f"📈 Upside estimado: {upside:.2f}%")
+        else:
+            print("❌ Não foi possível obter a cotação atual.")
+    else:
+        print("⚠️ Dados insuficientes para calcular a média dos últimos 3 anos.")
+    print("")
+    print("=================================================================================================")
 
-dfs_empresas = {}
 
-for empresa in Ticker_empresas_lower:
-    url = f"https://statusinvest.com.br/acoes/{empresa}"
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
-   
-    soup = BeautifulSoup(response.text, 'html.parser')
-    tabela = soup.find("table")
-
-    dados = [
-        [coluna.text.strip() for coluna in linha.find_all("td")]
-        for linha in tabela.find_all("tr")
-        if linha.find_all("td")
-    ]
-
-    df_empresa = pd.DataFrame(dados, columns=["Tipo", "Data Com", "Data Pagamento", "Valor"])
-########################################################################################################################
-  
-   #Lipar Dados
-
-    for col in df_empresa.select_dtypes(include='object').columns:
-        df_empresa[col] = df_empresa[col].str.strip()
-  
-    df_empresa["Valor"] = df_empresa["Valor"].apply(
-        lambda x: float(re.search(r"[\d,\.]+", x).group().replace(",", ".")) if isinstance(x, str) and re.search(r"[\d,\.]+", x) else None
-    )
-    df_empresa["Data Pagamento"] = pd.to_datetime(df_empresa["Data Pagamento"], format="%d/%m/%Y", errors='coerce')
-    df_empresa.drop("Data Com", axis=1, inplace=True)
-    dfs_empresas[empresa.upper()] = df_empresa
-
-    print(f'a {empresa} teve os seguintes rendimentos:{df_empresa}')
-########################################################################################################################
-   
-    #calculos
-
-    dividendos_anuais = calcular_dividendo_anual(df_empresa)
-    media_3anos = dividendos_anuais.mean()
-    preco_teto = media_3anos / dy_esperado if media_3anos else 0
-
-    ticker = yf.Ticker(f"{empresa.upper()}.SA")
-    cotacao_atual = ticker.fast_info["lastPrice"]
-    upside = preco_teto / cotacao_atual if cotacao_atual else 0
-
-    print(f"A média dos últimos 3 anos da empresa {empresa.upper()} é: R$ {media_3anos:.2f}")
-    print(f"Preço teto (DY desejado {dy_esperado*100:.0f}%): R$ {preco_teto:.2f}")
-    print(f"Cotação atual: R$ {cotacao_atual:.2f} ➜ Upside estimado: {(upside - 1) * 100:.2f}%\n")
+# Encerra navegador
+driver.quit()
