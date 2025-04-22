@@ -4,7 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-# 🔎 Função robusta: busca payout e total de papéis de forma confiável
+
 def get_dados_status_invest(ticker_brasileiro):
     papel = ticker_brasileiro.replace(".SA", "").lower()
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -28,7 +28,7 @@ def get_dados_status_invest(ticker_brasileiro):
 
     raise ValueError(f"❌ Não foi possível encontrar o número de ações de {papel}")
 
-# ✅ Lista de ações para análise
+
 Acoes = ["AURE3", "BBAS3", "CXSE3", "KLBN3", "SAPR3"]
 Acoes = [acao + ".SA" for acao in Acoes]
 
@@ -55,7 +55,7 @@ for empresa in Acoes:
     preco_atual = ticker.info["regularMarketPrice"]
     upside = ((preco_teto / preco_atual) - 1) * 100
 
-    # ✅ Exibição limpa e completa
+    
     print(f"\n📈 {empresa}")
     print(f"🔎 Dados capturados:")
     print(f"  • Payout médio: {payout_medio:.2%}")
