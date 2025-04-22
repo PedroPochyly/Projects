@@ -10,10 +10,7 @@ import pandas as pd
 from datetime import datetime
 import yfinance as yf
 
-# ✅ Modo headless controlável
-HEADLESS = True  # Altere para False se quiser visualizar o navegador
 
-# Lista de ações
 tickers = ["AURE3", "BBAS3", "CXSE3", "KLBN3", "SAPR3"]
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
@@ -26,7 +23,6 @@ for ticker in tickers:
     driver.get(f'https://statusinvest.com.br/acoes/{ticker.lower()}')
 
     try:
-        # Scroll para carregar a área dos proventos
         div7 = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.XPATH, '/html/body/main/div[3]/div/div[1]/div[2]/div[7]'))
         )
@@ -78,7 +74,7 @@ for ticker in tickers:
     df.dropna(inplace=True)
     dfs[ticker] = df
 
-    # Resumo anual
+   
     df_resampled = df.resample('YE', on='Pagamento')['Valor'].sum()
     preco_teto_ano = df_resampled / 0.06
 
@@ -100,7 +96,6 @@ for ticker in tickers:
         media_3anos = base_media['Dividendo Total'].mean()
         preco_teto = media_3anos / 0.06
 
-        # Cotação atual via yfinance
         yf_ticker = yf.Ticker(f"{ticker}.SA")
         try:
             preco_atual = yf_ticker.fast_info['lastPrice']
