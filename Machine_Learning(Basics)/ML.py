@@ -6,19 +6,6 @@ from dash import dcc, html
 from dash.dependencies import Input, Output
 
 # ------------------------------
-# Função para formatar os números em milhões/bilhões
-# ------------------------------
-def fmt_vendas(x):
-    if x >= 1000:          
-        return f'{x/1000:.1f} bilhões'
-    elif x >= 1:           
-        return f'{x:.1f} milhões'
-    elif x > 0:            
-        return f'{x*1000:.0f} mil'
-    else:
-        return '0'
-
-# ------------------------------
 # Carregando os dados
 # ------------------------------
 df = pd.read_csv("vgsales.csv")
@@ -51,6 +38,14 @@ df_vendas_por_plataforma = (
     .reset_index()
 )
 
+# Vendas Globais por Ano
+vendas_globais_por_ano = (
+    df.groupby('Year')['Global_Sales'].sum()
+    .sort_values(ascending=False)
+    .reset_index()
+)
+
+
 # Transformando colunas de países em linhas
 df_long = df.melt(
     id_vars=['Genre', 'Platform'],   
@@ -73,6 +68,7 @@ vendas_por_plataforma_pais = (
     .reset_index()
 )
 
+
 # ------------------------------
 # Criando app Dash
 # ------------------------------
@@ -93,6 +89,12 @@ app.layout = html.Div([
         id="grafico-genero",
         figure=px.bar(df_vendas_por_genero, x="Genre", y="Global_Sales",color_discrete_sequence=px.colors.sequential.Viridis,
                       title="Vendas Globais por Gênero", text_auto=True)
+    ),
+    # Gráfico de Vendas Globais por Ano
+    dcc.Graph(
+        id="grafico-genero",
+        figure=px.bar(vendas_globais_por_ano, x="Year", y="Global_Sales",color_discrete_sequence=px.colors.sequential.Viridis,
+                      title="Evolução das Vendas", text_auto=True)
     ),
 
     # Gráfico de Vendas por Plataforma
